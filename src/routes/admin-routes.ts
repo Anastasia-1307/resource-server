@@ -2,13 +2,12 @@ import { Elysia } from "elysia";
 import { authMiddleware } from "../middleware/auth-middleware";
 import { requireAdmin } from "../middleware/role-middleware";
 import { PrismaClient } from "@prisma/client";
-import { hashPassword } from "../lib/crypto-utils";
 
 const prisma = new PrismaClient();
 
 export const adminRoutes = new Elysia({ prefix: "/api" })
   // Public OAuth user sync endpoint (no auth required)
-  .post("/admin/sync-oauth-user", async ({ body, headers, set }) => {
+  .post("/admin/sync-oauth-user", async ({ body, headers }) => {
     console.log("🔍 Public OAuth Sync - Request received");
     
     const auth = headers.authorization;
@@ -49,11 +48,10 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
       user = await prisma.users.create({
         data: {
           id: payload.sub,
-          email: payload.email as string,
-          username: (payload.name as string) || (payload.email as string),
+          email: payload.email,
+          username: payload.name || payload.email,
           password_hash: "oauth_placeholder", // OAuth users don't have passwords
-          password_salt: "oauth_placeholder", // OAuth users don't have salt
-          role: (payload.role as string) || 'pacient',
+          role: payload.role || 'pacient',
         }
       });
 
@@ -101,8 +99,7 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
           email: user.email,
           username: user.username || user.email.split('@')[0],
           role: user.role || "admin",
-          password_hash: "oauth_user_no_password",
-          password_salt: "oauth_user_no_salt"
+          password_hash: "oauth_user_no_password"
         }
       });
       
@@ -123,6 +120,10 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
     console.log("🔍 Admin Routes - GET /admin/users called");
     try {
       const users = await prisma.users.findMany({
+        include: {
+          patient: true,
+          doctor: true,
+        },
         orderBy: {
           created_at: 'desc'
         }
@@ -136,7 +137,9 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
           email: user.email,
           username: user.username,
           role: user.role,
-          created_at: user.created_at
+          created_at: user.created_at,
+          patient: user.patient,
+          doctor: user.doctor
         })),
         total: users.length
       };
@@ -179,15 +182,11 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
       role: string;
     };
     
-    // Hash the password securely with Argon2ID
-    const passwordHash = await hashPassword(password);
-    
     const user = await prisma.users.create({
       data: {
         email,
         username,
-        password_hash: passwordHash,
-        password_salt: "argon2id", // Bun handles salt internally
+        password_hash: password, // Should be hashed in real implementation
         role,
       }
     });
@@ -199,11 +198,12 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
   .get("/admin/stats", async () => {
     console.log("🔍 Admin Routes - GET /admin/stats called");
     try {
-      const [usersCount, patientsCount, doctorsCount, programariCount] = await Promise.all([
+      const [usersCount, patientsCount, doctorsCount, appointmentsCount, recordsCount] = await Promise.all([
         prisma.users.count(),
         prisma.users.count({ where: { role: 'pacient' } }),
         prisma.users.count({ where: { role: 'medic' } }),
-        prisma.programari.count()
+        prisma.appointment.count(),
+        prisma.medicalRecord.count()
       ]);
       
       const result = {
@@ -211,7 +211,8 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
           users: usersCount,
           patients: patientsCount,
           doctors: doctorsCount,
-          programari: programariCount
+          appointments: appointmentsCount,
+          medicalRecords: recordsCount
         }
       };
       

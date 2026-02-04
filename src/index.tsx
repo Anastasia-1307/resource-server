@@ -8,6 +8,7 @@ import { pacientRoutes } from "./routes/pacient-routes";
 import { medicRoutes } from "./routes/medic-routes";
 import { adminRoutes } from "./routes/admin-routes";
 import { healthRoutes } from "./routes/health-routes";
+import { syncRoutes } from "./routes/sync-routes";
 
 const app = new Elysia()
   .onRequest(({ request, set }) => {
@@ -45,6 +46,7 @@ const app = new Elysia()
     }
   })
   .use(healthRoutes)
+  .use(syncRoutes)
   .use(pacientRoutes)
   .use(medicRoutes)
   .use(adminRoutes)

@@ -35,18 +35,16 @@ export const authMiddleware = async ({ request, set }: any) => {
 
     console.log(" Auth Middleware - Token verified successfully:", payload);
 
-    // Get user from database
-    console.log(" Auth Middleware - Finding user:", payload.sub);
-    let user = await UserService.findUserById(payload.sub);
-    
-    if (!user) {
-      console.log(" Auth Middleware - User not found in resource server database");
-      console.log(" Auth Middleware - Expected user ID:", payload.sub);
-      console.log(" Auth Middleware - Expected email:", payload.email);
-      throw new Error("User not found in resource server. Please ensure user exists in resource server database.");
-    }
+    // Skip database lookup - use JWT payload directly
+    // The token is already verified by auth server, so we can trust the payload
+    const user = {
+      id: payload.sub,
+      email: payload.email,
+      name: payload.name,
+      role: payload.role
+    };
 
-    console.log(" Auth Middleware - User found:", user);
+    console.log(" Auth Middleware - User from JWT:", user);
     return { user };
   } catch (error) {
     console.log(" Auth Middleware - Error:", error);
