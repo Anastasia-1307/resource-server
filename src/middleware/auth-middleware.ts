@@ -5,6 +5,12 @@ import prisma from "../lib/prisma";
 export const authMiddleware = async ({ request, set }: any) => {
   console.log("🔍 Auth Middleware - Request received");
   
+  if (!request || !request.headers) {
+    console.log("❌ Auth Middleware - Request or headers undefined");
+    set.status = 400;
+    throw new Error("Invalid request - missing headers");
+  }
+  
   const auth = request.headers.get("authorization");
   console.log("🔍 Auth Middleware - Authorization header:", auth?.substring(0, 20) + "...");
 

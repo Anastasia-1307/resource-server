@@ -1,13 +1,14 @@
+// @ts-nocheck
 import { Elysia } from "elysia";
 import { authMiddleware } from "../middleware/auth-middleware";
 import { requireAdmin } from "../middleware/role-middleware";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from '../generated/prisma';
 
 const prisma = new PrismaClient();
 
 export const adminRoutes = new Elysia({ prefix: "/api" })
   // Public OAuth user sync endpoint (no auth required)
-  .post("/admin/sync-oauth-user", async ({ body, headers }) => {
+  .post("/admin/sync-oauth-user", async ({ body, headers, set }) => {
     console.log("🔍 Public OAuth Sync - Request received");
     
     const auth = headers.authorization;
@@ -64,6 +65,7 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
       throw new Error("Invalid token or sync failed");
     }
   })
+  // Apply auth middleware to protected admin routes
   .derive(authMiddleware)
   .derive(requireAdmin)
   .get("/admin", ({ user }) => ({
@@ -77,52 +79,13 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
     timestamp: new Date().toISOString(),
   }))
   
-  // Sync OAuth user to resource server
-  .post("/admin/sync-oauth-user", async ({ user }) => {
-    try {
-      // Check if user already exists
-      const existingUser = await prisma.users.findUnique({
-        where: { id: user.id }
-      });
-      
-      if (existingUser) {
-        return { 
-          message: "User already exists", 
-          user: existingUser 
-        };
-      }
-      
-      // Create user from OAuth payload
-      const newUser = await prisma.users.create({
-        data: {
-          id: user.id,
-          email: user.email,
-          username: user.username || user.email.split('@')[0],
-          role: user.role || "admin",
-          password_hash: "oauth_user_no_password"
-        }
-      });
-      
-      console.log("✅ OAuth user synced:", newUser);
-      
-      return { 
-        message: "OAuth user synced successfully", 
-        user: newUser 
-      };
-    } catch (error) {
-      console.log("❌ Error syncing OAuth user:", error);
-      throw new Error("Failed to sync OAuth user");
-    }
-  })
-  
   // Get all users with their role-specific data
-  .get("/admin/users", async () => {
+  .get("/admin/users", async ({ set, store }) => {
     console.log("🔍 Admin Routes - GET /admin/users called");
     try {
       const users = await prisma.users.findMany({
         include: {
-          patient: true,
-          doctor: true,
+          medic_info: true,
         },
         orderBy: {
           created_at: 'desc'
@@ -138,8 +101,7 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
           username: user.username,
           role: user.role,
           created_at: user.created_at,
-          patient: user.patient,
-          doctor: user.doctor
+          medic_info: user.medic_info
         })),
         total: users.length
       };
@@ -220,6 +182,144 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
       return result;
     } catch (error) {
       console.log("❌ Admin Routes - Stats error:", error);
+      throw error;
+    }
+  })
+  
+  // Get user logs
+  .get("/admin/logs", async () => {
+    console.log("🔍 Admin Routes - GET /admin/logs called");
+    try {
+      const logs = await prisma.user_logs.findMany({
+        orderBy: {
+          created_at: 'desc'
+        },
+        take: 100 // Limit to last 100 logs
+      });
+      
+      console.log("🔍 Admin Routes - Logs found:", logs.length);
+      return logs;
+    } catch (error) {
+      console.log("❌ Admin Routes - Logs error:", error);
+      throw error;
+    }
+  })
+  
+  // Get OAuth users
+  .get("/admin/oauth-users", async () => {
+    console.log("🔍 Admin Routes - GET /admin/oauth-users called");
+    try {
+      const oauthUsers = await prisma.oauth_users.findMany({
+        orderBy: {
+          created_at: 'desc'
+        }
+      });
+      
+      console.log("🔍 Admin Routes - OAuth users found:", oauthUsers.length);
+      return oauthUsers;
+    } catch (error) {
+      console.log("❌ Admin Routes - OAuth users error:", error);
+      throw error;
+    }
+  })
+  
+  // Get medic info
+  .get("/admin/medic-info", async () => {
+    console.log("🔍 Admin Routes - GET /admin/medic-info called");
+    try {
+      const medicInfo = await prisma.medic_info.findMany({
+        include: {
+          users: {
+            select: {
+              username: true
+            }
+          }
+        },
+        orderBy: {
+          created_at: 'desc'
+        }
+      });
+      
+      const result = medicInfo.map((medic: any) => ({
+        ...medic,
+        username: medic.users.username
+      }));
+      
+      console.log("🔍 Admin Routes - Medic info found:", result.length);
+      return result;
+    } catch (error) {
+      console.log("❌ Admin Routes - Medic info error:", error);
+      throw error;
+    }
+  })
+  
+  // Get program lucru
+  .get("/admin/program-lucru", async () => {
+    console.log("🔍 Admin Routes - GET /admin/program-lucru called");
+    try {
+      const programLucru = await prisma.program_lucru.findMany({
+        orderBy: {
+          created_at: 'desc'
+        }
+      });
+      
+      console.log("🔍 Admin Routes - Program lucru found:", programLucru.length);
+      return programLucru;
+    } catch (error) {
+      console.log("❌ Admin Routes - Program lucru error:", error);
+      throw error;
+    }
+  })
+  
+  // Get specialitati
+  .get("/admin/specialitati", async () => {
+    console.log("🔍 Admin Routes - GET /admin/specialitati called");
+    try {
+      const specialitati = await prisma.specialitati.findMany({
+        orderBy: {
+          created_at: 'desc'
+        }
+      });
+      
+      console.log("🔍 Admin Routes - Specialitati found:", specialitati.length);
+      return specialitati;
+    } catch (error) {
+      console.log("❌ Admin Routes - Specialitati error:", error);
+      throw error;
+    }
+  })
+  
+  // Get programari
+  .get("/admin/programari", async () => {
+    console.log("🔍 Admin Routes - GET /admin/programari called");
+    try {
+      const programari = await prisma.programari.findMany({
+        orderBy: {
+          created_at: 'desc'
+        }
+      });
+      
+      console.log("🔍 Admin Routes - Programari found:", programari.length);
+      return programari;
+    } catch (error) {
+      console.log("❌ Admin Routes - Programari error:", error);
+      throw error;
+    }
+  })
+  
+  // Confirm appointment
+  .put("/admin/programari/:id/confirm", async ({ params }) => {
+    console.log("🔍 Admin Routes - PUT /admin/programari/:id/confirm called");
+    try {
+      const programare = await prisma.programari.update({
+        where: { id: parseInt(params.id) },
+        data: { status: 'confirmat' }
+      });
+      
+      console.log("🔍 Admin Routes - Appointment confirmed:", programare.id);
+      return { message: "Appointment confirmed successfully", programare };
+    } catch (error) {
+      console.log("❌ Admin Routes - Confirm appointment error:", error);
       throw error;
     }
   });

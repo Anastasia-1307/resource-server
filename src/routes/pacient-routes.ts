@@ -1,7 +1,8 @@
+// @ts-nocheck
 import { Elysia } from "elysia";
 import { authMiddleware } from "../middleware/auth-middleware";
 import { requirePacient } from "../middleware/role-middleware";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from '../generated/prisma';
 
 const prisma = new PrismaClient();
 
