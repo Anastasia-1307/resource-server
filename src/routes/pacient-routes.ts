@@ -132,6 +132,34 @@ export const pacientRoutes = new Elysia({ prefix: "/api" })
     return { message: "Programare cancelled successfully" };
   })
   
+  // Get all medici
+  .get("/pacient/medici", async () => {
+    const medici = await prisma.medic_info.findMany({
+      include: {
+        specialitati: true
+      }
+    });
+    
+    return medici.map(medic => ({
+      id: medic.id.toString(),
+      user_id: medic.user_id,
+      specialitate: medic.specialitati?.nume || 'Nespecificat',
+      experienta: medic.experienta,
+      nume: medic.nume,
+      prenume: medic.prenume,
+      telefon: medic.telefon || 'Nu specificat',
+      specialitate_id: medic.specialitate_id,
+      created_at: medic.created_at?.toISOString(),
+      updated_at: medic.updated_at?.toISOString()
+    }));
+  })
+  
+  // Get all specialitati
+  .get("/pacient/specialitati", async () => {
+    const specialitati = await prisma.specialitati.findMany();
+    return specialitati;
+  })
+
   // Get user statistics
   .get("/pacient/stats", async ({ user }) => {
     const [totalProgramari, pendingProgramari, confirmedProgramari] = await Promise.all([

@@ -26,6 +26,11 @@ const generalLimiter = new RateLimiterMemory({
 export const rateLimitPlugin = (app: Elysia) => {
   return app
     .onRequest(async ({ request, set }) => {
+      // Temporarily disable rate limiting in development
+      if (process.env.NODE_ENV === 'development') {
+        return;
+      }
+      
       const ip = request.headers.get('x-forwarded-for') || 
                 request.headers.get('x-real-ip') || 
                 'unknown';
