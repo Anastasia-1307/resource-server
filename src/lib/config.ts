@@ -1,11 +1,13 @@
 import dotenv from "dotenv";
 
-dotenv.config();
+// Load environment variables
+dotenv.config({ path: '.env' });
 
 console.log("🔍 Resource Server Config:", {
-  issuer: process.env.ISSUER || "http://localhost:4000",
-  audience: process.env.AUDIENCE || "nextjs_client",
-  jwksUrl: process.env.JWKS_URL || "http://localhost:4000/.well-known/jwks.json"
+  DATABASE_URL: process.env.DATABASE_URL ? "SET" : "NOT SET",
+  issuer: process.env.JWT_ISSUER || "http://localhost:4000",
+  audience: process.env.JWT_AUDIENCE || "nextjs_client", // Forced to match auth server tokens
+  jwksUrl: process.env.JWT_ISSUER ? `${process.env.JWT_ISSUER}/.well-known/jwks.json` : "http://localhost:4000/.well-known/jwks.json"
 });
 
 export const config = {
@@ -13,9 +15,9 @@ export const config = {
     port: parseInt(process.env.PORT || "5000"),
   },
   auth: {
-    issuer: process.env.ISSUER || "http://localhost:4000",
-    audience: process.env.AUDIENCE || "nextjs_client",
-    jwksUrl: process.env.JWKS_URL || "http://localhost:4000/.well-known/jwks.json",
+    issuer: process.env.JWT_ISSUER || "http://localhost:4000",
+    audience: "nextjs_client", // Force the correct audience to match auth server tokens
+    jwksUrl: process.env.JWT_ISSUER ? `${process.env.JWT_ISSUER}/.well-known/jwks.json` : "http://localhost:4000/.well-known/jwks.json",
   },
   database: {
     url: process.env.DATABASE_URL,

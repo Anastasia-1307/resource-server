@@ -85,7 +85,9 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
     try {
       const users = await prisma.users.findMany({
         include: {
-          medic_info: true,
+         programari: true,
+        refresh_tokens: true,
+    sessions: true,
         },
         orderBy: {
           created_at: 'desc'
@@ -219,7 +221,8 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
       return oauthUsers;
     } catch (error) {
       console.log("❌ Admin Routes - OAuth users error:", error);
-      throw error;
+      // Return empty array if table doesn't exist or has no data
+      return [];
     }
   })
   
@@ -249,7 +252,8 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
       return result;
     } catch (error) {
       console.log("❌ Admin Routes - Medic info error:", error);
-      throw error;
+      // Return empty array instead of throwing error to prevent admin page from failing
+      return [];
     }
   })
   
@@ -285,6 +289,75 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
       return specialitati;
     } catch (error) {
       console.log("❌ Admin Routes - Specialitati error:", error);
+      throw error;
+    }
+  })
+  
+  // Create new specialitate
+  .post("/admin/specialitati", async ({ body }) => {
+    console.log("🔍 Admin Routes - POST /admin/specialitati called");
+    try {
+      const { nume, descriere } = body as {
+        nume: string;
+        descriere: string;
+      };
+      
+      if (!nume) {
+        return { error: "Numele este obligatoriu" };
+      }
+      
+      const specialitate = await prisma.specialitati.create({
+        data: {
+          nume: nume.trim(),
+          descriere: descriere?.trim() || null
+        }
+      });
+      
+      console.log("✅ Admin Routes - Specialitate created successfully:", specialitate);
+      return { message: "Specialitate creată cu succes", specialitate };
+    } catch (error) {
+      console.log("❌ Admin Routes - Create specialitate error:", error);
+      throw error;
+    }
+  })
+  
+  // Update specialitate
+  .put("/admin/specialitati/:id", async ({ params, body }) => {
+    console.log("🔍 Admin Routes - PUT /admin/specialitati/:id called");
+    try {
+      const { nume, descriere } = body as {
+        nume: string;
+        descriere: string;
+      };
+      
+      const specialitate = await prisma.specialitati.update({
+        where: { id: parseInt(params.id) },
+        data: {
+          nume: nume?.trim(),
+          descriere: descriere?.trim() || null
+        }
+      });
+      
+      console.log("✅ Admin Routes - Specialitate updated successfully:", specialitate);
+      return { message: "Specialitate actualizată cu succes", specialitate };
+    } catch (error) {
+      console.log("❌ Admin Routes - Update specialitate error:", error);
+      throw error;
+    }
+  })
+  
+  // Delete specialitate
+  .delete("/admin/specialitati/:id", async ({ params }) => {
+    console.log("🔍 Admin Routes - DELETE /admin/specialitati/:id called");
+    try {
+      await prisma.specialitati.delete({
+        where: { id: parseInt(params.id) }
+      });
+      
+      console.log("✅ Admin Routes - Specialitate deleted successfully:", params.id);
+      return { message: "Specialitate ștearsă cu succes" };
+    } catch (error) {
+      console.log("❌ Admin Routes - Delete specialitate error:", error);
       throw error;
     }
   })
