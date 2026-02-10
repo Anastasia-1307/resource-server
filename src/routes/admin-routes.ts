@@ -232,28 +232,198 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
     try {
       const medicInfo = await prisma.medic_info.findMany({
         include: {
-          users: {
-            select: {
-              username: true
-            }
-          }
+          specialitati: true
         },
         orderBy: {
           created_at: 'desc'
         }
       });
       
-      const result = medicInfo.map((medic: any) => ({
-        ...medic,
-        username: medic.users.username
-      }));
-      
-      console.log("🔍 Admin Routes - Medic info found:", result.length);
-      return result;
+      console.log("🔍 Admin Routes - Medic info found:", medicInfo.length);
+      return medicInfo;
     } catch (error) {
       console.log("❌ Admin Routes - Medic info error:", error);
       // Return empty array instead of throwing error to prevent admin page from failing
       return [];
+    }
+  })
+  
+  // Create medic info
+  .post("/admin/medic-info", async ({ body }) => {
+    console.log("🔍 Admin Routes - POST /admin/medic-info called");
+    try {
+      const { nume, prenume, experienta, specialitate_id } = body;
+      
+      if (!nume || !prenume || experienta === undefined || !specialitate_id) {
+        return { error: "Missing required fields: nume, prenume, experienta, specialitate_id" };
+      }
+      
+      const newMedic = await prisma.medic_info.create({
+        data: {
+          nume,
+          prenume,
+          experienta: parseInt(experienta),
+          specialitate_id: parseInt(specialitate_id)
+        },
+        include: {
+          specialitati: true
+        }
+      });
+      
+      console.log("🔍 Admin Routes - Medic info created:", newMedic);
+      return newMedic;
+    } catch (error) {
+      console.log("❌ Admin Routes - Create medic info error:", error);
+      return { error: "Failed to create medic info" };
+    }
+  })
+  
+  // Update medic info
+  .put("/admin/medic-info/:id", async ({ params, body }) => {
+    console.log("🔍 Admin Routes - PUT /admin/medic-info/:id called");
+    try {
+      const { id } = params;
+      const { nume, prenume, experienta, specialitate_id } = body;
+      
+      if (!nume || !prenume || experienta === undefined || !specialitate_id) {
+        return { error: "Missing required fields: nume, prenume, experienta, specialitate_id" };
+      }
+      
+      const updatedMedic = await prisma.medic_info.update({
+        where: { id: parseInt(id) },
+        data: {
+          nume,
+          prenume,
+          experienta: parseInt(experienta),
+          specialitate_id: parseInt(specialitate_id)
+        },
+        include: {
+          specialitati: true
+        }
+      });
+      
+      console.log("🔍 Admin Routes - Medic info updated:", updatedMedic);
+      return updatedMedic;
+    } catch (error) {
+      console.log("❌ Admin Routes - Update medic info error:", error);
+      return { error: "Failed to update medic info" };
+    }
+  })
+  
+  // Delete medic info
+  .delete("/admin/medic-info/:id", async ({ params }) => {
+    console.log("🔍 Admin Routes - DELETE /admin/medic-info/:id called");
+    try {
+      const { id } = params;
+      
+      await prisma.medic_info.delete({
+        where: { id: parseInt(id) }
+      });
+      
+      console.log("🔍 Admin Routes - Medic info deleted:", id);
+      return { success: true, message: "Medic info deleted successfully" };
+    } catch (error) {
+      console.log("❌ Admin Routes - Delete medic info error:", error);
+      return { error: "Failed to delete medic info" };
+    }
+  })
+  
+  // Get specialitati
+  .get("/admin/specialitati", async () => {
+    console.log("🔍 Admin Routes - GET /admin/specialitati called");
+    try {
+      const specialitati = await prisma.specialitati.findMany({
+        orderBy: {
+          created_at: 'desc'
+        }
+      });
+      
+      console.log("🔍 Admin Routes - Specialitati found:", specialitati.length);
+      return specialitati;
+    } catch (error) {
+      console.log("❌ Admin Routes - Specialitati error:", error);
+      throw error;
+    }
+  })
+  
+  // Create new specialitate
+  .post("/admin/specialitati", async ({ body }) => {
+    console.log("🔍 Admin Routes - POST /admin/specialitati called");
+    try {
+      const { nume, descriere } = body as {
+        nume: string;
+        descriere: string;
+      };
+      
+      if (!nume) {
+        return { error: "Numele este obligatoriu" };
+      }
+      
+      const specialitate = await prisma.specialitati.create({
+        data: {
+          nume: nume.trim(),
+          descriere: descriere?.trim() || null
+        }
+      });
+      
+      console.log("✅ Admin Routes - Specialitate created successfully:", specialitate);
+      return { message: "Specialitate creată cu succes", specialitate };
+    } catch (error) {
+      console.log("❌ Admin Routes - Create specialitate error:", error);
+      return { error: "Failed to create specialitate", details: error.message };
+    }
+  })
+  
+  // Update specialitate
+  .put("/admin/specialitati/:id", async ({ params, body }) => {
+    console.log("🔍 Admin Routes - PUT /admin/specialitati/:id called");
+    console.log("🔍 Params:", params);
+    console.log("🔍 Body:", body);
+    try {
+      const { nume, descriere } = body as {
+        nume: string;
+        descriere: string;
+      };
+      
+      if (!nume || nume.trim() === '') {
+        return { error: "Numele este obligatoriu" };
+      }
+      
+      const specialitate = await prisma.specialitati.update({
+        where: { id: parseInt(params.id) },
+        data: {
+          nume: nume?.trim(),
+          descriere: descriere?.trim() || null
+        }
+      });
+      
+      console.log("✅ Admin Routes - Specialitate updated successfully:", specialitate);
+      return { message: "Specialitate actualizată cu succes", specialitate };
+    } catch (error) {
+      console.log("❌ Admin Routes - Update specialitate error:", error);
+      return { error: "Failed to update specialitate", details: error.message };
+    }
+  })
+  
+  // Delete specialitate
+  .delete("/admin/specialitati/:id", async ({ params }) => {
+    console.log("🔍 Admin Routes - DELETE /admin/specialitati/:id called");
+    console.log("🔍 Params:", params);
+    try {
+      const id = parseInt(params.id);
+      if (isNaN(id)) {
+        return { error: "Invalid ID" };
+      }
+      
+      await prisma.specialitati.delete({
+        where: { id }
+      });
+      
+      console.log("✅ Admin Routes - Specialitate deleted successfully:", id);
+      return { message: "Specialitate ștearsă cu succes", id };
+    } catch (error) {
+      console.log("❌ Admin Routes - Delete specialitate error:", error);
+      return { error: "Failed to delete specialitate", details: error.message };
     }
   })
   
@@ -324,11 +494,17 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
   // Update specialitate
   .put("/admin/specialitati/:id", async ({ params, body }) => {
     console.log("🔍 Admin Routes - PUT /admin/specialitati/:id called");
+    console.log("🔍 Params:", params);
+    console.log("🔍 Body:", body);
     try {
       const { nume, descriere } = body as {
         nume: string;
         descriere: string;
       };
+      
+      if (!nume || nume.trim() === '') {
+        return { error: "Numele este obligatoriu" };
+      }
       
       const specialitate = await prisma.specialitati.update({
         where: { id: parseInt(params.id) },
@@ -342,23 +518,29 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
       return { message: "Specialitate actualizată cu succes", specialitate };
     } catch (error) {
       console.log("❌ Admin Routes - Update specialitate error:", error);
-      throw error;
+      return { error: "Failed to update specialitate", details: error.message };
     }
   })
   
   // Delete specialitate
   .delete("/admin/specialitati/:id", async ({ params }) => {
     console.log("🔍 Admin Routes - DELETE /admin/specialitati/:id called");
+    console.log("🔍 Params:", params);
     try {
+      const id = parseInt(params.id);
+      if (isNaN(id)) {
+        return { error: "Invalid ID" };
+      }
+      
       await prisma.specialitati.delete({
-        where: { id: parseInt(params.id) }
+        where: { id }
       });
       
-      console.log("✅ Admin Routes - Specialitate deleted successfully:", params.id);
-      return { message: "Specialitate ștearsă cu succes" };
+      console.log("✅ Admin Routes - Specialitate deleted successfully:", id);
+      return { message: "Specialitate ștearsă cu succes", id };
     } catch (error) {
       console.log("❌ Admin Routes - Delete specialitate error:", error);
-      throw error;
+      return { error: "Failed to delete specialitate", details: error.message };
     }
   })
   
