@@ -77,7 +77,7 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
       role: user.role,
     },
     timestamp: new Date().toISOString(),
-  }))
+  })
   
   // Get all users with their role-specific data
   .get("/admin/users", async ({ set, store }) => {
@@ -312,19 +312,42 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
   
   // Delete medic info
   .delete("/admin/medic-info/:id", async ({ params }) => {
+    console.log("🔍🔍🔍 DELETE ROUTE CALLED!!! /admin/medic-info/:id called");
     console.log("🔍 Admin Routes - DELETE /admin/medic-info/:id called");
     try {
       const { id } = params;
+      const medicId = parseInt(id);
       
+      // First check if medic exists
+      const medic = await prisma.medic_info.findUnique({
+        where: { id: medicId },
+        include: {
+          program_lucru: true
+        }
+      });
+      
+      if (!medic) {
+        return { error: "Medic info not found" };
+      }
+      
+      // Delete related work schedules first
+      if (medic.program_lucru.length > 0) {
+        console.log("🔍 Admin Routes - Deleting work schedules for medic:", medicId);
+        await prisma.program_lucru.deleteMany({
+          where: { medic_info_id: medicId }
+        });
+      }
+      
+      // Now delete the medic info
       await prisma.medic_info.delete({
-        where: { id: parseInt(id) }
+        where: { id: medicId }
       });
       
       console.log("🔍 Admin Routes - Medic info deleted:", id);
       return { success: true, message: "Medic info deleted successfully" };
     } catch (error) {
       console.log("❌ Admin Routes - Delete medic info error:", error);
-      return { error: "Failed to delete medic info" };
+      return { error: "Failed to delete medic info", details: error.message };
     }
   })
   
@@ -577,4 +600,5 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
       console.log("❌ Admin Routes - Confirm appointment error:", error);
       throw error;
     }
-  });
+  })
+);
