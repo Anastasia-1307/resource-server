@@ -51,7 +51,10 @@ export const authMiddleware = async ({ request, set }: any) => {
     };
 
     console.log(" Auth Middleware - User from JWT:", user);
-    return { user };
+    
+    // Attach user to request context for onRequest middleware
+    // Don't return anything to avoid response interference
+    request.user = user;
   } catch (error) {
     console.log(" Auth Middleware - Error:", error);
     set.status = 401;

@@ -1,7 +1,9 @@
 import { hasRole, hasAnyRole, UserRole } from "../lib/jwt";
 
 export const requireRole = (requiredRole: UserRole) => {
-  return ({ user, set }: any) => {
+  return ({ request, set }: any) => {
+    const user = request.user;
+    
     if (!user || !user.role) {
       console.log("❌ Role Middleware - User or user.role undefined");
       set.status = 401;
@@ -12,12 +14,13 @@ export const requireRole = (requiredRole: UserRole) => {
       set.status = 403;
       throw new Error(`Forbidden - Required role: ${requiredRole}`);
     }
-    return { user };
   };
 };
 
 export const requireAnyRole = (allowedRoles: UserRole[]) => {
-  return ({ user, set }: any) => {
+  return ({ request, set }: any) => {
+    const user = request.user;
+    
     if (!user || !user.role) {
       console.log("❌ Role Middleware - User or user.role undefined");
       set.status = 401;
@@ -28,7 +31,6 @@ export const requireAnyRole = (allowedRoles: UserRole[]) => {
       set.status = 403;
       throw new Error(`Forbidden - Required one of roles: ${allowedRoles.join(", ")}`);
     }
-    return { user };
   };
 };
 

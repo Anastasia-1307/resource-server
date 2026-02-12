@@ -7,6 +7,8 @@ import { PrismaClient } from '../generated/prisma';
 const prisma = new PrismaClient();
 
 export const adminRoutes = new Elysia({ prefix: "/api" })
+  .onRequest(authMiddleware)
+  .onBeforeHandle(requireAdmin)
   // Public OAuth user sync endpoint (no auth required)
   .post("/admin/sync-oauth-user", async ({ body, headers, set }) => {
     console.log("🔍 Public OAuth Sync - Request received");
@@ -65,51 +67,29 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
       throw new Error("Invalid token or sync failed");
     }
   })
-  // Apply auth middleware to protected admin routes
-  .derive(authMiddleware)
-  .derive(requireAdmin)
-  .get("/admin", ({ user }) => ({
+  .get("/admin", ({ request }) => ({
     message: "Welcome admin",
     user: {
-      id: user.id,
-      email: user.email,
-      username: user.username,
-      role: user.role,
+      id: request.user.id,
+      email: request.user.email,
+      username: request.user.username,
+      role: request.user.role,
     },
     timestamp: new Date().toISOString(),
-  })
+  }))
   
   // Get all users with their role-specific data
-  .get("/admin/users", async ({ set, store }) => {
+  .get("/admin/users", async () => {
     console.log("🔍 Admin Routes - GET /admin/users called");
     try {
       const users = await prisma.users.findMany({
-        include: {
-         programari: true,
-        refresh_tokens: true,
-    sessions: true,
-        },
         orderBy: {
           created_at: 'desc'
         }
       });
       
       console.log("🔍 Admin Routes - Users found:", users.length);
-      
-      const result = {
-        users: users.map(user => ({
-          id: user.id,
-          email: user.email,
-          username: user.username,
-          role: user.role,
-          created_at: user.created_at,
-          medic_info: user.medic_info
-        })),
-        total: users.length
-      };
-      
-      console.log("🔍 Admin Routes - Returning:", result);
-      return result;
+      return { users, total: users.length };
     } catch (error) {
       console.log("❌ Admin Routes - Error:", error);
       throw error;
@@ -223,6 +203,43 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
       console.log("❌ Admin Routes - OAuth users error:", error);
       // Return empty array if table doesn't exist or has no data
       return [];
+    }
+  })
+  
+  // Get OAuth users merged (filtered from main users table)
+  .get("/admin/oauth-users-merged", async () => {
+    console.log("🔍 Admin Routes - GET /admin/oauth-users-merged called");
+    try {
+      const users = await prisma.users.findMany({
+        where: {
+          password_hash: 'oauth_placeholder'
+        },
+        orderBy: {
+          created_at: 'desc'
+        }
+      });
+      
+      console.log("🔍 Admin Routes - OAuth users merged found:", users.length);
+      console.log("🔍 Admin Routes - OAuth users merged data:", users);
+      
+      // Also check if there are any users with different OAuth patterns
+      const allUsers = await prisma.users.findMany({
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          password_hash: true,
+          role: true,
+          created_at: true
+        },
+        take: 5
+      });
+      console.log("🔍 Admin Routes - Sample all users:", allUsers);
+      
+      return { users };
+    } catch (error) {
+      console.log("❌ Admin Routes - OAuth users merged error:", error);
+      return { users: [] };
     }
   })
   
@@ -450,7 +467,7 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
     }
   })
   
-  // Get program lucru
+  // Get programari lucru
   .get("/admin/program-lucru", async () => {
     console.log("🔍 Admin Routes - GET /admin/program-lucru called");
     try {
@@ -465,105 +482,6 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
     } catch (error) {
       console.log("❌ Admin Routes - Program lucru error:", error);
       throw error;
-    }
-  })
-  
-  // Get specialitati
-  .get("/admin/specialitati", async () => {
-    console.log("🔍 Admin Routes - GET /admin/specialitati called");
-    try {
-      const specialitati = await prisma.specialitati.findMany({
-        orderBy: {
-          created_at: 'desc'
-        }
-      });
-      
-      console.log("🔍 Admin Routes - Specialitati found:", specialitati.length);
-      return specialitati;
-    } catch (error) {
-      console.log("❌ Admin Routes - Specialitati error:", error);
-      throw error;
-    }
-  })
-  
-  // Create new specialitate
-  .post("/admin/specialitati", async ({ body }) => {
-    console.log("🔍 Admin Routes - POST /admin/specialitati called");
-    try {
-      const { nume, descriere } = body as {
-        nume: string;
-        descriere: string;
-      };
-      
-      if (!nume) {
-        return { error: "Numele este obligatoriu" };
-      }
-      
-      const specialitate = await prisma.specialitati.create({
-        data: {
-          nume: nume.trim(),
-          descriere: descriere?.trim() || null
-        }
-      });
-      
-      console.log("✅ Admin Routes - Specialitate created successfully:", specialitate);
-      return { message: "Specialitate creată cu succes", specialitate };
-    } catch (error) {
-      console.log("❌ Admin Routes - Create specialitate error:", error);
-      throw error;
-    }
-  })
-  
-  // Update specialitate
-  .put("/admin/specialitati/:id", async ({ params, body }) => {
-    console.log("🔍 Admin Routes - PUT /admin/specialitati/:id called");
-    console.log("🔍 Params:", params);
-    console.log("🔍 Body:", body);
-    try {
-      const { nume, descriere } = body as {
-        nume: string;
-        descriere: string;
-      };
-      
-      if (!nume || nume.trim() === '') {
-        return { error: "Numele este obligatoriu" };
-      }
-      
-      const specialitate = await prisma.specialitati.update({
-        where: { id: parseInt(params.id) },
-        data: {
-          nume: nume?.trim(),
-          descriere: descriere?.trim() || null
-        }
-      });
-      
-      console.log("✅ Admin Routes - Specialitate updated successfully:", specialitate);
-      return { message: "Specialitate actualizată cu succes", specialitate };
-    } catch (error) {
-      console.log("❌ Admin Routes - Update specialitate error:", error);
-      return { error: "Failed to update specialitate", details: error.message };
-    }
-  })
-  
-  // Delete specialitate
-  .delete("/admin/specialitati/:id", async ({ params }) => {
-    console.log("🔍 Admin Routes - DELETE /admin/specialitati/:id called");
-    console.log("🔍 Params:", params);
-    try {
-      const id = parseInt(params.id);
-      if (isNaN(id)) {
-        return { error: "Invalid ID" };
-      }
-      
-      await prisma.specialitati.delete({
-        where: { id }
-      });
-      
-      console.log("✅ Admin Routes - Specialitate deleted successfully:", id);
-      return { message: "Specialitate ștearsă cu succes", id };
-    } catch (error) {
-      console.log("❌ Admin Routes - Delete specialitate error:", error);
-      return { error: "Failed to delete specialitate", details: error.message };
     }
   })
   
@@ -600,5 +518,4 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
       console.log("❌ Admin Routes - Confirm appointment error:", error);
       throw error;
     }
-  })
-);
+  });
