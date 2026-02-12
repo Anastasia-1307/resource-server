@@ -7,8 +7,39 @@ import { PrismaClient } from '../generated/prisma';
 const prisma = new PrismaClient();
 
 export const adminRoutes = new Elysia({ prefix: "/api" })
-  .onRequest(authMiddleware)
-  .onBeforeHandle(requireAdmin)
+  .onRequest(({ request, set }) => {
+    console.log("🔥 ADMIN ROUTES onRequest - Request received:", request.method, request.url);
+    
+    // Only process requests that are actually for admin endpoints
+    if (!request.url.includes('/admin/')) {
+      console.log("🔥 ADMIN ROUTES - Skipping non-admin request:", request.url);
+      // Don't return anything, let other routes handle it
+      return;
+    }
+    
+    // For admin requests, don't return anything to let the flow continue
+    console.log("🔥 ADMIN ROUTES - Processing admin request:", request.url);
+  })
+  .derive(authMiddleware)
+  .derive(({ user }) => ({ user }))
+  .onBeforeHandle(({ user, set, request }) => {
+    console.log(`🔥 ADMIN ROUTES - Role middleware check for: ${request.url}`);
+    console.log(`🔥 ADMIN ROUTES - User from auth middleware:`, user);
+    
+    if (!user || !user.role) {
+      console.log("❌ Role Middleware - User or user.role undefined");
+      set.status = 401;
+      throw new Error("Unauthorized - User not authenticated");
+    }
+    
+    if (user.role !== 'admin') {
+      console.log(`❌ Role Middleware - User role ${user.role} is not admin`);
+      set.status = 403;
+      throw new Error(`Forbidden - Required role: admin`);
+    }
+    
+    console.log(`✅ Role Middleware - Admin access granted for ${user.email}`);
+  })
   // Public OAuth user sync endpoint (no auth required)
   .post("/admin/sync-oauth-user", async ({ body, headers, set }) => {
     console.log("🔍 Public OAuth Sync - Request received");
@@ -36,30 +67,30 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
         throw new Error("Invalid token payload");
       }
 
-      // Check if user already exists
-      let user = await prisma.users.findUnique({
+      // Check if user already exists in oauth_users table
+      let user = await prisma.oauth_users.findUnique({
         where: { id: payload.sub }
       });
 
       if (user) {
-        console.log("🔍 Public OAuth Sync - User already exists:", user.email);
-        return { message: "User already exists", user: { id: user.id, email: user.email, role: user.role } };
+        console.log("🔍 Public OAuth Sync - OAuth user already exists:", user.email);
+        return { message: "OAuth user already exists", user: { id: user.id, email: user.email, role: user.role } };
       }
 
-      // Create new user
-      console.log("🔍 Public OAuth Sync - Creating new user...");
-      user = await prisma.users.create({
+      // Create new OAuth user in oauth_users table
+      console.log("🔍 Public OAuth Sync - Creating new OAuth user...");
+      user = await prisma.oauth_users.create({
         data: {
           id: payload.sub,
-          email: payload.email,
-          username: payload.name || payload.email,
+          email: payload.email as string,
+          username: (payload.name as string) || (payload.email as string),
           password_hash: "oauth_placeholder", // OAuth users don't have passwords
-          role: payload.role || 'pacient',
+          role: (payload.role as string) || 'pacient',
         }
       });
 
-      console.log("✅ Public OAuth Sync - User created successfully:", user.email);
-      return { message: "User synced successfully", user: { id: user.id, email: user.email, role: user.role } };
+      console.log("✅ Public OAuth Sync - OAuth user created successfully:", user.email);
+      return { message: "OAuth user synced successfully", user: { id: user.id, email: user.email, role: user.role } };
       
     } catch (error) {
       console.log("❌ Public OAuth Sync - Error:", error);
@@ -67,28 +98,90 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
       throw new Error("Invalid token or sync failed");
     }
   })
-  .get("/admin", ({ request }) => ({
+  
+  // Migrate existing OAuth users from users table to oauth_users table
+  .post("/admin/migrate-oauth-users", async () => {
+    console.log("🔍 Admin Routes - POST /admin/migrate-oauth-users called");
+    try {
+      // Find all OAuth users in the users table
+      const oauthUsersInUsersTable = await prisma.users.findMany({
+        where: {
+          password_hash: 'oauth_placeholder'
+        }
+      });
+      
+      console.log("🔍 Admin Routes - Found OAuth users in users table:", oauthUsersInUsersTable.length);
+      
+      let migratedCount = 0;
+      
+      for (const user of oauthUsersInUsersTable) {
+        // Check if user already exists in oauth_users table
+        const existingOAuthUser = await prisma.oauth_users.findUnique({
+          where: { id: user.id }
+        });
+        
+        if (!existingOAuthUser) {
+          // Migrate user to oauth_users table
+          await prisma.oauth_users.create({
+            data: {
+              id: user.id,
+              email: user.email,
+              username: user.username,
+              password_hash: user.password_hash,
+              role: user.role,
+              created_at: user.created_at,
+              updated_at: user.updated_at
+            }
+          });
+          
+          // Optionally delete from users table or keep for reference
+          // await prisma.users.delete({ where: { id: user.id } });
+          
+          migratedCount++;
+        }
+      }
+      
+      console.log("✅ Admin Routes - Migrated", migratedCount, "OAuth users");
+      return { 
+        message: `Successfully migrated ${migratedCount} OAuth users`, 
+        migratedCount,
+        totalFound: oauthUsersInUsersTable.length 
+      };
+    } catch (error) {
+      console.log("❌ Admin Routes - Migration error:", error);
+      return { error: "Failed to migrate OAuth users", details: error instanceof Error ? error.message : String(error) };
+    }
+  })
+  
+  .get("/admin", ({ user }) => ({
     message: "Welcome admin",
     user: {
-      id: request.user.id,
-      email: request.user.email,
-      username: request.user.username,
-      role: request.user.role,
+      id: user.id,
+      email: user.email,
+      username: user.name || user.email,
+      role: user.role,
     },
     timestamp: new Date().toISOString(),
   }))
   
-  // Get all users with their role-specific data
+  // Get all classic users (non-OAuth)
   .get("/admin/users", async () => {
     console.log("🔍 Admin Routes - GET /admin/users called");
     try {
       const users = await prisma.users.findMany({
+        where: {
+          password_hash: {
+            not: 'oauth_placeholder'
+          }
+        },
         orderBy: {
           created_at: 'desc'
         }
       });
       
-      console.log("🔍 Admin Routes - Users found:", users.length);
+      console.log("🔍 Admin Routes - Classic users found:", users.length);
+      console.log("🔍 Admin Routes - Sample users:", users.slice(0, 2));
+      
       return { users, total: users.length };
     } catch (error) {
       console.log("❌ Admin Routes - Error:", error);
@@ -146,8 +239,8 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
         prisma.users.count(),
         prisma.users.count({ where: { role: 'pacient' } }),
         prisma.users.count({ where: { role: 'medic' } }),
-        prisma.appointment.count(),
-        prisma.medicalRecord.count()
+        prisma.programari.count(),
+        prisma.user_logs.count()
       ]);
       
       const result = {
@@ -187,10 +280,12 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
     }
   })
   
-  // Get OAuth users
-  .get("/admin/oauth-users", async () => {
-    console.log("🔍 Admin Routes - GET /admin/oauth-users called");
+    
+  // Get OAuth users merged (from oauth_users table)
+  .get("/admin/oauth-users-merged", async () => {
+    console.log("🔍 Admin Routes - GET /admin/oauth-users-merged called");
     try {
+      console.log("🔍 Admin Routes - About to query oauth_users table");
       const oauthUsers = await prisma.oauth_users.findMany({
         orderBy: {
           created_at: 'desc'
@@ -198,48 +293,106 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
       });
       
       console.log("🔍 Admin Routes - OAuth users found:", oauthUsers.length);
-      return oauthUsers;
+      console.log("🔍 Admin Routes - OAuth users data:", oauthUsers);
+      console.log("🔍 Admin Routes - About to return response:", { users: oauthUsers });
+      
+      return { users: oauthUsers };
     } catch (error) {
-      console.log("❌ Admin Routes - OAuth users error:", error);
-      // Return empty array if table doesn't exist or has no data
-      return [];
+      console.log("❌ Admin Routes - OAuth users merged error:", error);
+      console.log("❌ Admin Routes - Error details:", error instanceof Error ? error.message : String(error));
+      return { users: [] };
     }
   })
   
-  // Get OAuth users merged (filtered from main users table)
-  .get("/admin/oauth-users-merged", async () => {
-    console.log("🔍 Admin Routes - GET /admin/oauth-users-merged called");
+  // Update OAuth user
+  .put("/admin/oauth-users-merged/:id", async ({ params, body }) => {
+    console.log("🔍 Admin Routes - PUT /admin/oauth-users-merged/:id called");
     try {
-      const users = await prisma.users.findMany({
-        where: {
-          password_hash: 'oauth_placeholder'
-        },
-        orderBy: {
-          created_at: 'desc'
+      const { id } = params;
+      const { email, username, role } = body as {
+        email: string;
+        username: string;
+        role: string;
+      };
+      
+      if (!email || !username || !role) {
+        return { error: "Missing required fields: email, username, role" };
+      }
+      
+      const updatedUser = await prisma.oauth_users.update({
+        where: { id },
+        data: {
+          email,
+          username,
+          role
         }
       });
       
-      console.log("🔍 Admin Routes - OAuth users merged found:", users.length);
-      console.log("🔍 Admin Routes - OAuth users merged data:", users);
-      
-      // Also check if there are any users with different OAuth patterns
-      const allUsers = await prisma.users.findMany({
-        select: {
-          id: true,
-          email: true,
-          username: true,
-          password_hash: true,
-          role: true,
-          created_at: true
-        },
-        take: 5
-      });
-      console.log("🔍 Admin Routes - Sample all users:", allUsers);
-      
-      return { users };
+      console.log("✅ Admin Routes - OAuth user updated:", updatedUser.id);
+      return { message: "OAuth user updated successfully", user: updatedUser };
     } catch (error) {
-      console.log("❌ Admin Routes - OAuth users merged error:", error);
-      return { users: [] };
+      console.log("❌ Admin Routes - Update OAuth user error:", error);
+      return { error: "Failed to update OAuth user", details: error instanceof Error ? error.message : String(error) };
+    }
+  })
+  
+  // Delete OAuth user
+  .delete("/admin/oauth-users-merged/:id", async ({ params }) => {
+    console.log("🔍 Admin Routes - DELETE /admin/oauth-users-merged/:id called");
+    try {
+      const { id } = params;
+      
+      // First check if user exists
+      const user = await prisma.oauth_users.findUnique({
+        where: { id }
+      });
+      
+      if (!user) {
+        return { error: "OAuth user not found" };
+      }
+      
+      // Delete the OAuth user
+      await prisma.oauth_users.delete({
+        where: { id }
+      });
+      
+      console.log("✅ Admin Routes - OAuth user deleted:", id);
+      return { success: true, message: "OAuth user deleted successfully" };
+    } catch (error) {
+      console.log("❌ Admin Routes - Delete OAuth user error:", error);
+      return { error: "Failed to delete OAuth user", details: error instanceof Error ? error.message : String(error) };
+    }
+  })
+  
+  // Create OAuth user
+  .post("/admin/oauth-users-merged", async ({ body }) => {
+    console.log("🔍 Admin Routes - POST /admin/oauth-users-merged called");
+    try {
+      const { email, username, password, role } = body as {
+        email: string;
+        username: string;
+        password?: string;
+        role: string;
+      };
+      
+      if (!email || !username || !role) {
+        return { error: "Missing required fields: email, username, role" };
+      }
+      
+      const newUser = await prisma.oauth_users.create({
+        data: {
+          email,
+          username,
+          password_hash: password || "oauth_placeholder",
+          role
+        }
+      });
+      
+      console.log("✅ Admin Routes - OAuth user created:", newUser.id);
+      return { message: "OAuth user created successfully", user: newUser };
+    } catch (error) {
+      console.log("❌ Admin Routes - Create OAuth user error:", error);
+      return { error: "Failed to create OAuth user", details: error instanceof Error ? error.message : String(error) };
     }
   })
   
@@ -269,7 +422,12 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
   .post("/admin/medic-info", async ({ body }) => {
     console.log("🔍 Admin Routes - POST /admin/medic-info called");
     try {
-      const { nume, prenume, experienta, specialitate_id } = body;
+      const { nume, prenume, experienta, specialitate_id } = body as {
+        nume: string;
+        prenume: string;
+        experienta: number;
+        specialitate_id: number;
+      };
       
       if (!nume || !prenume || experienta === undefined || !specialitate_id) {
         return { error: "Missing required fields: nume, prenume, experienta, specialitate_id" };
@@ -279,8 +437,8 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
         data: {
           nume,
           prenume,
-          experienta: parseInt(experienta),
-          specialitate_id: parseInt(specialitate_id)
+          experienta,
+          specialitate_id
         },
         include: {
           specialitati: true
@@ -300,7 +458,12 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
     console.log("🔍 Admin Routes - PUT /admin/medic-info/:id called");
     try {
       const { id } = params;
-      const { nume, prenume, experienta, specialitate_id } = body;
+      const { nume, prenume, experienta, specialitate_id } = body as {
+        nume: string;
+        prenume: string;
+        experienta: number;
+        specialitate_id: number;
+      };
       
       if (!nume || !prenume || experienta === undefined || !specialitate_id) {
         return { error: "Missing required fields: nume, prenume, experienta, specialitate_id" };
@@ -311,8 +474,8 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
         data: {
           nume,
           prenume,
-          experienta: parseInt(experienta),
-          specialitate_id: parseInt(specialitate_id)
+          experienta,
+          specialitate_id
         },
         include: {
           specialitati: true
@@ -364,7 +527,7 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
       return { success: true, message: "Medic info deleted successfully" };
     } catch (error) {
       console.log("❌ Admin Routes - Delete medic info error:", error);
-      return { error: "Failed to delete medic info", details: error.message };
+      return { error: "Failed to delete medic info", details: error instanceof Error ? error.message : String(error) };
     }
   })
   
@@ -517,5 +680,25 @@ export const adminRoutes = new Elysia({ prefix: "/api" })
     } catch (error) {
       console.log("❌ Admin Routes - Confirm appointment error:", error);
       throw error;
+    }
+  })
+
+  // Get password reset tokens
+  .get("/admin/password-reset-tokens", async () => {
+    console.log("🔍 Admin Routes - GET /admin/password-reset-tokens called");
+    try {
+      const tokens = await prisma.password_reset_tokens.findMany({
+        orderBy: {
+          created_at: 'desc'
+        },
+        take: 100 // Limit to last 100 tokens
+      });
+      
+      console.log("🔍 Admin Routes - Password reset tokens found:", tokens.length);
+      return tokens;
+    } catch (error) {
+      console.log("❌ Admin Routes - Password reset tokens error:", error);
+      // Return empty array if table doesn't exist or has no data
+      return [];
     }
   });

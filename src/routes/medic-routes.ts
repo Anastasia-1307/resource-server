@@ -2,13 +2,203 @@
 import { Elysia } from "elysia";
 import { authMiddleware } from "../middleware/auth-middleware";
 import { requireMedic } from "../middleware/role-middleware";
+import { verifyToken } from "../lib/jwt";
 import { PrismaClient } from '../generated/prisma';
 
 const prisma = new PrismaClient();
 
+// Combined middleware for authentication and role checking
+const medicAuthMiddleware = async ({ request, set }: any) => {
+  console.log("🔍 Combined Medic Auth Middleware - Request received:", request.method, request.url);
+  
+  if (!request || !request.headers) {
+    console.log("❌ Combined Medic Auth Middleware - Request or headers undefined");
+    set.status = 400;
+    throw new Error("Invalid request - missing headers");
+  }
+  
+  const auth = request.headers.get("authorization");
+  console.log("🔍 Combined Medic Auth Middleware - Authorization header:", auth?.substring(0, 20) + "...");
+
+  if (!auth?.startsWith("Bearer ")) {
+    console.log("❌ Combined Medic Auth Middleware - Missing or invalid token format");
+    set.status = 401;
+    throw new Error("Not authorized - Missing or invalid token format");
+  }
+
+  const token = auth.slice(7);
+  console.log("🔍 Combined Medic Auth Middleware - Token extracted:", token.substring(0, 20) + "...");
+  console.log("🔍 Combined Medic Auth Middleware - Token length:", token.length);
+
+  try {
+    // Verify JWT token
+    console.log("🔍 Combined Medic Auth Middleware - Verifying token...");
+    console.log("🔍 Combined Medic Auth Middleware - Token:", token.substring(0, 50) + "...");
+    console.log("🔍 Combined Medic Auth Middleware - Token length:", token.length);
+    
+    const payload = await verifyToken(token);
+    
+    console.log("🔍 Combined Medic Auth Middleware - JWT Verification SUCCESS:", payload);
+    
+    if (!payload.sub) {
+      console.log("❌ Combined Medic Auth Middleware - Invalid token subject");
+      set.status = 401;
+      throw new Error("Not authorized - Invalid token subject");
+    }
+
+    if (payload.role !== "medic") {
+      console.log("❌ Combined Medic Auth Middleware - Invalid role:", payload.role);
+      set.status = 403;
+      throw new Error("Forbidden - Required role: medic");
+    }
+
+    console.log("Combined Medic Auth Middleware - Token verified successfully:", payload);
+
+    // Skip database lookup - use JWT payload directly
+    // The token is already verified by auth server, so we can trust the payload
+    const user = {
+      id: payload.sub,
+      email: payload.email,
+      name: payload.name,
+      role: payload.role
+    };
+
+    console.log("Combined Medic Auth Middleware - User from JWT:", user);
+    
+    // Return user object to be added to context by .derive()
+    return { user };
+    
+  } catch (error) {
+    console.log("Combined Medic Auth Middleware - Error:", error);
+    set.status = 401;
+    throw new Error("Not authorized - Invalid token");
+  }
+};
+
 export const medicRoutes = new Elysia({ prefix: "/api" })
-  .derive(authMiddleware)
-  .derive(requireMedic)
+  .onRequest(({ request, set }) => {
+    console.log("🔥 MEDIC ROUTES onRequest - Request received:", request.method, request.url);
+  })
+  .derive(medicAuthMiddleware)
+  // Get doctor's appointments - MUST come before /medic route
+  .get("/medic/appointments", async ({ user, query, request }) => {
+    console.log('🔥🔥🔥 GET /medic/appointments - ROUTE HIT!');
+    console.log('🔍 GET /medic/appointments - user:', user);
+    console.log('🔍 GET /medic/appointments - query:', query);
+    console.log('🔍 GET /medic/appointments - request.url:', request.url);
+    console.log('🔍 GET /medic/appointments - query:', query);
+    
+    // Filter by current medic's user_id
+    const where: any = {
+      user_id: user.id // Only get appointments for current medic
+    };
+    
+    if (date) {
+      const startOfDay = new Date(date);
+      const endOfDay = new Date(date);
+      endOfDay.setHours(23, 59, 59, 999);
+      
+      where.data_programare = {
+        gte: startOfDay,
+        lte: endOfDay
+      };
+    }
+    
+    const programari = await prisma.programari.findMany({
+      where,
+      include: {
+        users: {
+          select: {
+            username: true,
+            email: true
+          }
+        }
+      },
+      orderBy: {
+        data_programare: 'asc'
+      }
+    });
+    
+    console.log('🔍 GET /medic/appointments - programari found:', programari.length);
+    
+    // Transform appointments to match frontend interface
+    const transformedAppointments = programari.map(programare => ({
+      id: programare.id,
+      data_programare: programare.data_programare.toISOString().split('T')[0],
+      ora_programare: programare.data_programare.toTimeString().slice(0, 5),
+      status: 'programat', // All appointments start as 'programat'
+      detalii: programare.serviciu || ''
+    }));
+    
+    console.log('🔍 GET /medic/appointments - transformed:', transformedAppointments);
+    
+    return transformedAppointments; // Return array directly, not wrapped in object
+  })
+  
+  // Create new appointment
+  .post("/medic/appointments", async ({ body, user, request }) => {
+    console.log('🔍 POST /medic/appointments - REQUEST STARTED');
+    console.log('🔍 POST /medic/appointments - headers:', Object.fromEntries(request.headers.entries()));
+    
+    const { date, time, notes, pacient_nume } = body as {
+      date: string;
+      time: string;
+      notes?: string;
+      pacient_nume?: string;
+    };
+    
+    console.log('🔍 POST /medic/appointments - body:', body);
+    console.log('🔍 POST /medic/appointments - user:', user);
+    
+    if (!user || !user.id) {
+      console.error('🔍 POST /medic/appointments - ERROR: No user or user.id');
+      throw new Error('Unauthorized: No user context');
+    }
+    
+    // Combine date and time into datetime
+    const dateTime = new Date(`${date}T${time}:00`);
+    console.log('🔍 POST /medic/appointments - dateTime:', dateTime);
+    console.log('🔍 POST /medic/appointments - dateTime isValid:', !isNaN(dateTime.getTime()));
+    
+    try {
+      // Create programare using medic's user_id for now
+      // TODO: Implement proper patient selection system
+      console.log('🔍 POST /medic/appointments - Creating programare with data:', {
+        user_id: user.id,
+        serviciu: `${pacient_nume ? `Pacient: ${pacient_nume}` : 'Programare'}${notes ? ` - ${notes}` : ''}`,
+        data_programare: dateTime
+      });
+      
+      const programare = await prisma.programari.create({
+        data: {
+          user_id: user.id, // Using medic's ID temporarily
+          serviciu: `${pacient_nume ? `Pacient: ${pacient_nume}` : 'Programare'}${notes ? ` - ${notes}` : ''}`,
+          data_programare: dateTime
+        }
+      });
+      
+      console.log('🔍 POST /medic/appointments - programare created:', programare);
+      
+      // Transform to match frontend interface
+      const transformedAppointment = {
+        id: programare.id,
+        data_programare: programare.data_programare.toISOString().split('T')[0],
+        ora_programare: programare.data_programare.toTimeString().slice(0, 5),
+        status: 'programat',
+        detalii: programare.serviciu || ''
+      };
+      
+      console.log('🔍 POST /medic/appointments - transformedAppointment:', transformedAppointment);
+      
+      return transformedAppointment;
+    } catch (error) {
+      console.error('🔍 POST /medic/appointments - ERROR:', error);
+      console.error('🔍 POST /medic/appointments - ERROR stack:', error.stack);
+      throw error;
+    }
+  })
+  
+  // General medic info route - MUST come after specific routes
   .get("/medic", ({ user }) => {
     return {
       message: "Welcome medic",
@@ -36,183 +226,6 @@ export const medicRoutes = new Elysia({ prefix: "/api" })
     }
     
     return { doctor };
-  })
-  
-  // Get doctor's appointments
-  .get("/medic/appointments", async ({ user, query }) => {
-    const { date, status } = query as { date?: string, status?: string };
-    
-    const where: any = { doctor_id: user.id };
-    
-    if (date) {
-      const startOfDay = new Date(date);
-      const endOfDay = new Date(date);
-      endOfDay.setHours(23, 59, 59, 999);
-      
-      where.date_time = {
-        gte: startOfDay,
-        lte: endOfDay
-      };
-    }
-    
-    if (status) {
-      where.status = status;
-    }
-    
-    const appointments = await prisma.appointment.findMany({
-      where,
-      include: {
-        patient: {
-          include: {
-            user: true
-          }
-        }
-      },
-      orderBy: {
-        date_time: 'asc'
-      }
-    });
-    
-    // Transform appointments to match frontend interface
-    const transformedAppointments = appointments.map(apt => ({
-      id: apt.id,
-      patient_name: apt.patient.user.username,
-      patient_email: apt.patient.user.email,
-      date: apt.date_time.toISOString().split('T')[0],
-      time: apt.date_time.toTimeString().slice(0, 5),
-      status: apt.status === 'programata' ? 'scheduled' : 
-              apt.status === 'finalizata' ? 'completed' : 
-              apt.status === 'anulata' ? 'cancelled' : 'scheduled',
-      notes: apt.notes || ''
-    }));
-    
-    return { appointments: transformedAppointments, total: transformedAppointments.length };
-  })
-  
-  // Create new appointment
-  .post("/medic/appointments", async ({ body, user }) => {
-    const { patient_id, date, time, notes } = body as {
-      patient_id: string;
-      date: string;
-      time: string;
-      notes?: string;
-    };
-    
-    // Combine date and time into datetime
-    const dateTime = new Date(`${date}T${time}:00`);
-    
-    // Check if patient exists
-    const patient = await prisma.patient.findUnique({
-      where: { id: patient_id }
-    });
-    
-    if (!patient) {
-      throw new Error("Patient not found");
-    }
-    
-    // Create appointment
-    const appointment = await prisma.appointment.create({
-      data: {
-        doctor_id: user.id,
-        patient_id,
-        date_time: dateTime,
-        status: 'programata',
-        notes: notes || null
-      },
-      include: {
-        patient: {
-          include: {
-            user: true
-          }
-        }
-      }
-    });
-    
-    // Transform to match frontend interface
-    const transformedAppointment = {
-      id: appointment.id,
-      patient_name: appointment.patient.user.username,
-      patient_email: appointment.patient.user.email,
-      date: appointment.date_time.toISOString().split('T')[0],
-      time: appointment.date_time.toTimeString().slice(0, 5),
-      status: appointment.status === 'programata' ? 'scheduled' : 
-              appointment.status === 'finalizata' ? 'completed' : 
-              appointment.status === 'anulata' ? 'cancelled' : 'scheduled',
-      notes: appointment.notes || ''
-    };
-    
-    return transformedAppointment;
-  })
-  
-  // Delete/cancel appointment
-  .delete("/medic/appointments/:id", async ({ params, user }) => {
-    const appointment = await prisma.appointment.findFirst({
-      where: {
-        id: params.id,
-        doctor_id: user.id
-      }
-    });
-    
-    if (!appointment) {
-      throw new Error("Appointment not found or unauthorized");
-    }
-    
-    // Update status to cancelled instead of deleting
-    await prisma.appointment.update({
-      where: { id: params.id },
-      data: {
-        status: 'anulata',
-        updated_at: new Date()
-      }
-    });
-    
-    return { message: "Appointment cancelled successfully" };
-  })
-  
-  // Get appointment details
-  .get("/medic/appointments/:id", async ({ params, user }) => {
-    const appointment = await prisma.appointment.findFirst({
-      where: {
-        id: params.id,
-        doctor_id: user.id
-      },
-      include: {
-        patient: {
-          include: {
-            user: true
-          }
-        },
-        medicalRecord: true
-      }
-    });
-    
-    if (!appointment) {
-      throw new Error("Appointment not found");
-    }
-    
-    return { appointment };
-  })
-  
-  // Update appointment status
-  .put("/medic/appointments/:id/status", async ({ params, body, user }) => {
-    const { status } = body as { status: string };
-    
-    const appointment = await prisma.appointment.updateMany({
-      where: {
-        id: params.id,
-        doctor_id: user.id
-      },
-      data: {
-        status,
-        updated_at: new Date()
-      }
-    });
-    
-    if (appointment.count === 0) {
-      throw new Error("Appointment not found or unauthorized");
-    }
-    
-    return { message: "Appointment status updated successfully" };
   })
   
   // Get doctor's patients
@@ -359,9 +372,11 @@ export const medicRoutes = new Elysia({ prefix: "/api" })
       follow_up_date 
     } = body as any;
     
+    console.log('🔍 PUT params.id:', params.id, typeof params.id);
+    
     const medicalRecord = await prisma.medicalRecord.updateMany({
       where: {
-        id: params.id,
+        id: parseInt(params.id),
         doctor_id: user.id
       },
       data: {
@@ -384,9 +399,11 @@ export const medicRoutes = new Elysia({ prefix: "/api" })
   
   // Get medical record
   .get("/medic/medical-records/:id", async ({ params, user }) => {
+    console.log('🔍 GET params.id:', params.id, typeof params.id);
+    
     const medicalRecord = await prisma.medicalRecord.findFirst({
       where: {
-        id: params.id,
+        id: parseInt(params.id),
         doctor_id: user.id
       },
       include: {
