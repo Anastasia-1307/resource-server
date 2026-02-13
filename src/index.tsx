@@ -7,6 +7,7 @@ import { rateLimitPlugin } from "./middleware/rate-limiter";
 import { pacientRoutes } from "./routes/pacient-routes";
 import { medicRoutes } from "./routes/medic-routes";
 import { adminRoutes } from "./routes/admin-routes";
+import { publicRoutes } from "./routes/public-routes";
 import { healthRoutes } from "./routes/health-routes";
 import { syncRoutes } from "./routes/sync-routes";
 
@@ -32,6 +33,7 @@ const app = new Elysia()
   .use(medicRoutes)
   .use(adminRoutes)
   .use(pacientRoutes)
+  .use(publicRoutes)
   .use(syncRoutes)
   .use(healthRoutes)
   .listen(config.server.port);

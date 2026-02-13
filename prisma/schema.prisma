@@ -79,7 +79,9 @@ model users {
 model programari {
   id              Int       @id @default(autoincrement())
   user_id         String    @db.Uuid
+  medic_id        Int       @default(0)
   serviciu        String    @db.VarChar(255)
+  status          String    @default("programat") @db.VarChar(20)
   data_programare DateTime  @db.Timestamptz(6)
   created_at      DateTime? @default(now()) @db.Timestamptz(6)
   updated_at      DateTime? @default(now()) @db.Timestamptz(6)
@@ -125,6 +127,8 @@ model medic_info {
 model program_lucru {
   id              Int       @id @default(autoincrement())
   medic_info_id   Int
+  medic_nume     String?    @db.VarChar(100)
+  medic_prenume  String?    @db.VarChar(100)
   ora_inceput     DateTime? @db.Timestamptz(6)
   ora_sfarsit     DateTime? @db.Timestamptz(6)
   activ           Boolean   @default(true)

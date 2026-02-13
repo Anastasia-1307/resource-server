@@ -73,9 +73,33 @@ export const pacientRoutes = new Elysia({ prefix: "/api" })
       skip: Number(offset)
     });
     
+    // Format the programari data to match frontend expectations
+    const formattedProgramari = programari.map(programare => {
+      // Parse serviciu format: "Nume Prenume - Specialitate - Ora"
+      const serviciuParts = programare.serviciu.split(' - ');
+      const medicName = serviciuParts[0] || '';
+      const specialitate = serviciuParts[1] || '';
+      const ora = serviciuParts[2] || '';
+      
+      // Extract date and time from data_programare
+      const dateTime = new Date(programare.data_programare);
+      const date = dateTime.toISOString().split('T')[0];
+      
+      return {
+        id: programare.id.toString(),
+        medic_id: '', // We don't store this separately anymore
+        data_programare: date,
+        ora_programare: ora,
+        status: programare.status || 'programat',
+        serviciu: programare.serviciu,
+        medic_name: medicName,
+        specialitate: specialitate
+      };
+    });
+    
     const total = await prisma.programari.count({ where });
     
-    return { programari, total, hasMore: Number(offset) + Number(limit) < total };
+    return { programari: formattedProgramari, total, hasMore: Number(offset) + Number(limit) < total };
   })
   
   // Get programare details
@@ -96,40 +120,78 @@ export const pacientRoutes = new Elysia({ prefix: "/api" })
   
   // Create new programare
   .post("/pacient/programari", async ({ user, body }) => {
-    const { serviciu, data_programare, observatii } = body as any;
+    const { medic_id, data_programare, ora_programare, detalii } = body as any;
+    
+    // Get medic info to create a proper serviciu description
+    const medic = await prisma.medic_info.findUnique({
+      where: { id: parseInt(medic_id) },
+      include: { specialitati: true }
+    });
+    
+    if (!medic) {
+      throw new Error("Medic not found");
+    }
+    
+    // Create serviciu description from medic info
+    const serviciu = `${medic.nume} ${medic.prenume} - ${medic.specialitati?.nume || 'General'} - ${ora_programare}`;
+    
+    // Combine date and time for proper DateTime
+    const programareDateTime = new Date(`${data_programare}T${ora_programare}`);
     
     const programare = await prisma.programari.create({
       data: {
         user_id: user.id,
+        medic_id: parseInt(medic_id),
         serviciu,
-        data_programare: new Date(data_programare),
-        observatii,
-        status: 'pending'
+        status: 'programat',
+        data_programare: programareDateTime
       }
     });
     
     return { message: "Programare created successfully", programare };
   })
   
-  // Cancel programare
-  .put("/pacient/programari/:id/cancel", async ({ params, user }) => {
+  // Update programare status
+  .patch("/pacient/programari/:id", async ({ params, body, user }) => {
+    const { status } = body as { status: string };
+    const programareId = parseInt(params.id);
+    
+    if (!status || !['programat', 'confirmat', 'anulat'].includes(status)) {
+      throw new Error('Invalid status. Must be: programat, confirmat, or anulat');
+    }
+    
     const programare = await prisma.programari.updateMany({
       where: {
-        id: parseInt(params.id),
-        user_id: user.id,
-        status: 'pending'
+        id: programareId,
+        user_id: user.id
       },
       data: {
-        status: 'cancelled',
+        status,
         updated_at: new Date()
       }
     });
     
     if (programare.count === 0) {
-      throw new Error("Programare not found or cannot be cancelled");
+      throw new Error("Programare not found or unauthorized");
     }
     
-    return { message: "Programare cancelled successfully" };
+    return { message: "Status updated successfully" };
+  })
+  
+  // Cancel programare
+  .delete("/pacient/programari/:id", async ({ params, user }) => {
+    const programare = await prisma.programari.deleteMany({
+      where: {
+        id: parseInt(params.id),
+        user_id: user.id
+      }
+    });
+    
+    if (programare.count === 0) {
+      throw new Error("Programare not found");
+    }
+    
+    return { message: "Programare deleted successfully" };
   })
   
   // Get all medici

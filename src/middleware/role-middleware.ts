@@ -1,11 +1,9 @@
 import { hasRole, hasAnyRole, UserRole } from "../lib/jwt";
 
 export const requireRole = (requiredRole: UserRole) => {
-  return ({ request, set }: any) => {
+  return ({ user, set }: any) => {
     console.log(`🔍 ROLE MIDDLEWARE - Checking role: ${requiredRole}`);
-    console.log(`🔍 ROLE MIDDLEWARE - User:`, request.user);
-    
-    const user = request.user;
+    console.log(`🔍 ROLE MIDDLEWARE - User:`, user);
     
     if (!user || !user.role) {
       console.log("❌ Role Middleware - User or user.role undefined");
@@ -27,11 +25,9 @@ export const requireRole = (requiredRole: UserRole) => {
 };
 
 export const requireAnyRole = (allowedRoles: UserRole[]) => {
-  return ({ request, set }: any) => {
+  return ({ user, set }: any) => {
     console.log(`🔍 ROLE MIDDLEWARE - Checking any of roles: ${allowedRoles.join(", ")}`);
-    console.log(`🔍 ROLE MIDDLEWARE - User:`, request.user);
-    
-    const user = request.user;
+    console.log(`🔍 ROLE MIDDLEWARE - User:`, user);
     
     if (!user || !user.role) {
       console.log("❌ Role Middleware - User or user.role undefined");
