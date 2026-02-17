@@ -58,7 +58,16 @@ export const pacientRoutes = new Elysia({ prefix: "/api" })
       offset?: number 
     };
     
-    const where: any = { user_id: user.id };
+    const where: any = { 
+      OR: [
+        { user_id: user.id }, // Programări pentru user-ul autentificat (din users table)
+        { 
+          user_id: null,
+          // Verificăm dacă numele pacientului e în serviciu
+          serviciu: { contains: user.name || user.email }
+        }
+      ]
+    };
     
     if (status) {
       where.status = status;

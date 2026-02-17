@@ -274,13 +274,25 @@ export const medicRoutes = new Elysia({ prefix: "/api" })
       console.log('🔍 GET /medic/appointments - programari found:', programari.length);
       
       // Transform appointments to match frontend interface
-      const transformedAppointments = programari.map(programare => ({
-        id: programare.id,
-        data_programare: programare.data_programare.toISOString().split('T')[0],
-        ora_programare: programare.data_programare.toTimeString().slice(0, 5),
-        status: programare.status || 'programat', // Use actual status from database
-        detalii: programare.serviciu || ''
-      }));
+      const transformedAppointments = programari.map(programare => {
+        // Parse serviciu format: "Nume Prenume - Specialitate - Ora"
+        const serviciuParts = programare.serviciu.split(' - ');
+        const medicName = serviciuParts[0] || '';
+        const specialitate = serviciuParts[1] || '';
+        const ora = serviciuParts[2] || '';
+        
+        return {
+          id: programare.id,
+          data_programare: programare.data_programare.toISOString().split('T')[0],
+          ora_programare: programare.data_programare.toTimeString().slice(0, 5),
+          status: programare.status || 'programat', // Use actual status from database
+          detalii: programare.serviciu || '',
+          pacient_nume: programare.user_id ? null : serviciuParts[0] || '', // Extract patient name if no user_id
+          medic_nume: medicName,
+          specialitate: specialitate,
+          ora: ora
+        };
+      });
       
       console.log('🔍 GET /medic/appointments - transformed:', transformedAppointments);
       
@@ -350,78 +362,10 @@ export const medicRoutes = new Elysia({ prefix: "/api" })
 
       // TODO: Implement proper patient selection system
 
-      // Find patient by email to get their ID
-
+      // Don't search for patient - use the name directly from form
       let pacient_id = null;
-
-      if (pacient_nume) {
-
-        // Try to find patient in both users and oauth_users tables
-
-        let patient = null;
-
-        
-
-        // First try users table
-
-        patient = await prisma.users.findFirst({
-
-          where: {
-
-            OR: [
-
-              { email: pacient_nume },
-
-              { username: pacient_nume }
-
-            ],
-
-            role: 'pacient'
-
-          }
-
-        });
-
-        
-
-        // If not found, try oauth_users table
-
-        if (!patient) {
-
-          patient = await prisma.oauth_users.findFirst({
-
-            where: {
-
-              OR: [
-
-                { email: pacient_nume },
-
-                { username: pacient_nume }
-
-              ],
-
-              role: 'pacient'
-
-            }
-
-          });
-
-        }
-
-        
-
-        if (patient) {
-
-          pacient_id = patient.id;
-
-          console.log('🔍 POST /medic/appointments - Patient found:', patient.email, 'from:', patient.id.includes('-') ? 'users' : 'oauth_users');
-
-        } else {
-
-          console.log('🔍 POST /medic/appointments - Patient not found in either table, using manual name');
-
-        }
-      }
+      
+      console.log(' POST /medic/appointments - Using patient name from form:', pacient_nume);
       
       // Get medic info to find medic_id
     let medicInfo = await prisma.medic_info.findFirst({
@@ -453,12 +397,11 @@ export const medicRoutes = new Elysia({ prefix: "/api" })
       console.log("🔍 MEDIC INFO CREATED:", medicInfo);
     }
       
-      // Standardize format to match patient appointments
-      const nameParts = user.username?.split(' ') || ['Medic', 'Necunoscut'];
-      const serviciu = `${nameParts[0]} ${nameParts[1] || 'Necunoscut'} - General - ${time}`;
+      // Format serviciu with patient name from form
+      const serviciu = `${pacient_nume || 'Pacient Necunoscut'} - General - ${time}`;
       
       console.log('🔍 POST /medic/appointments - Creating programare with data:', {
-        user_id: pacient_id || user.id, // Use patient ID if found, otherwise medic's ID
+        user_id: pacient_id || null, // Use patient ID if found, otherwise null
         medic_id: medicInfo.id,
         serviciu: serviciu,
         data_programare: dateTime
@@ -467,7 +410,7 @@ export const medicRoutes = new Elysia({ prefix: "/api" })
 
       const programare = await prisma.programari.create({
         data: {
-          user_id: pacient_id || user.id, // Use patient ID if found, otherwise medic's ID
+          user_id: pacient_id || null, // Use patient ID if found, otherwise null
           medic_id: medicInfo.id,
           serviciu: serviciu,
           status: 'programat',
