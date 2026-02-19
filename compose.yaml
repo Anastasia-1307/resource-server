@@ -1,5 +1,6 @@
 services:
   resource-server:
+    image: nastea13/resource-server:latest
     build:
       context: .
     environment:
