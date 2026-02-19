@@ -258,14 +258,6 @@ export const medicRoutes = new Elysia({ prefix: "/api" })
       
       const programari = await prisma.programari.findMany({
         where,
-        include: {
-          users: {
-            select: {
-              username: true,
-              email: true
-            }
-          }
-        },
         orderBy: {
           data_programare: 'asc'
         }
@@ -287,7 +279,7 @@ export const medicRoutes = new Elysia({ prefix: "/api" })
           ora_programare: programare.data_programare.toTimeString().slice(0, 5),
           status: programare.status || 'programat', // Use actual status from database
           detalii: programare.serviciu || '',
-          pacient_nume: programare.user_id ? null : serviciuParts[0] || '', // Extract patient name if no user_id
+          pacient_nume: programare.user_id ? 'Patient with ID: ' + programare.user_id : serviciuParts[0] || '', // Show user_id if exists, otherwise extract from serviciu
           medic_nume: medicName,
           specialitate: specialitate,
           ora: ora
@@ -362,10 +354,29 @@ export const medicRoutes = new Elysia({ prefix: "/api" })
 
       // TODO: Implement proper patient selection system
 
-      // Don't search for patient - use the name directly from form
+      // Search for patient by name in users table
       let pacient_id = null;
       
-      console.log(' POST /medic/appointments - Using patient name from form:', pacient_nume);
+      if (pacient_nume) {
+        console.log('🔍 POST /medic/appointments - Searching for patient:', pacient_nume);
+        
+        // Try to find patient by username or name
+        const patient = await prisma.users.findFirst({
+          where: {
+            OR: [
+              { username: pacient_nume },
+              { username: { contains: pacient_nume, mode: 'insensitive' } }
+            ]
+          }
+        });
+        
+        if (patient) {
+          pacient_id = patient.id;
+          console.log('🔍 POST /medic/appointments - Patient found:', patient.id, patient.username);
+        } else {
+          console.log('🔍 POST /medic/appointments - Patient not found, will use null');
+        }
+      }
       
       // Get medic info to find medic_id
     let medicInfo = await prisma.medic_info.findFirst({
@@ -543,15 +554,7 @@ export const medicRoutes = new Elysia({ prefix: "/api" })
     
     // Return the updated appointment
     const appointment = await prisma.programari.findUnique({
-      where: { id: appointmentId },
-      include: {
-        users: {
-          select: {
-            username: true,
-            email: true
-          }
-        }
-      }
+      where: { id: appointmentId }
     });
     
     // Log the action
