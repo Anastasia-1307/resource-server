@@ -5,11 +5,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="74bd1d89-2ae4-4c7f-acf9-d110350c6cbc" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/prisma/migrations/migration_lock.toml" beforeDir="false" afterPath="$PROJECT_DIR$/prisma/migrations/migration_lock.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/prisma/schema.prisma" beforeDir="false" afterPath="$PROJECT_DIR$/prisma/schema.prisma" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/middleware/role-middleware.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/middleware/role-middleware.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/routes/medic-routes.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/routes/medic-routes.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/routes/pacient-routes.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/routes/pacient-routes.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/Dockerfile" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/package.json" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -63,6 +60,7 @@
       <workItem from="1770888975782" duration="1788000" />
       <workItem from="1770981769407" duration="6000" />
       <workItem from="1770989105033" duration="4000" />
+      <workItem from="1771422367286" duration="602000" />
     </task>
     <servers />
   </component>

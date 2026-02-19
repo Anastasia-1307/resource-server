@@ -4,7 +4,7 @@ ARG NODE_VERSION=24.13.0
 
 FROM node:${NODE_VERSION}-alpine
 
-# Nu setăm NODE_ENV=production pentru dev
+# Set NODE_ENV=development for development
 ENV NODE_ENV=development
 
 # Install Bun globally and OpenSSL
