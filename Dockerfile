@@ -1,30 +1,32 @@
 # syntax=docker/dockerfile:1
 
-ARG NODE_VERSION=24.13.0
+# Folosim imaginea oficială Bun pe bază de Alpine
+FROM oven/bun:1.1-alpine
 
-FROM node:${NODE_VERSION}-alpine
-
-# Set NODE_ENV=development for development
+# Setăm variabila de mediu pentru dezvoltare
 ENV NODE_ENV=development
 
-# Install Bun globally and OpenSSL
-RUN npm install -g bun && \
-    apk add --no-cache openssl libssl3 libcrypto3
+# Instalăm bibliotecile necesare pentru Prisma pe Alpine
+# Prisma are nevoie de openssl pentru a rula query engine-ul
+RUN apk add --no-cache openssl libssl3 libcrypto3 libc6-compat
 
 WORKDIR /usr/src/app
 
-# Copy deps first (cache friendly)
-COPY package.json bun.lock ./
+# Copiem fișierele de dependințe (Bun folosește bun.lockb de regulă)
+# Folosim * pentru a nu da eroare dacă fișierul lock lipsește temporar
+COPY package.json bun.lockb* ./
+
+# Instalăm pachetele folosind Bun (mult mai rapid decât npm)
 RUN bun install --frozen-lockfile
 
-# Copy all source files
+# Copiem restul codului sursă
 COPY . .
 
-# Generate Prisma Client for Linux
-RUN npx prisma generate
+# Generăm Prisma Client folosind bunx (echivalentul npx)
+RUN bunx prisma generate
 
-# Expose port for dev server
+# Expunem portul 5000 (specificat în codul tău)
 EXPOSE 5000
 
-# Run dev server
+# Pornim serverul de dezvoltare
 CMD ["bun", "run", "dev"]
